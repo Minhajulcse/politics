@@ -4,7 +4,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Coup: ক্ষমতা ও বিদ্রোহ</title>
-    <!-- আপনি যদি অফলাইনে খেলতে চান, তবে এই লিংক পরিবর্তন করে লোকাল ফাইল দিবেন -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.min.js"></script>
     <style>
         :root { --bg: #1a1a2e; --text: #e0e0e0; --accent: #e94560; --gold: #f9a826; --panel: #16213e; --card-bg: #0f3460; }
@@ -26,19 +25,24 @@
         .action-buttons button { font-size: 13px; padding: 8px; flex: 1; min-width: 100px; }
         
         .my-cards { display: flex; gap: 10px; justify-content: center; margin-top: 15px;}
-        .card { background: var(--card-bg); padding: 15px; border-radius: 8px; border: 2px solid var(--accent); width: 130px; text-align: center; position: relative;}
+        .card { background: var(--card-bg); padding: 15px; border-radius: 8px; border: 2px solid var(--accent); width: 130px; text-align: center; position: relative; transition: transform 0.2s;}
+        .card:hover { transform: scale(1.05); }
         .card h4 { margin: 0 0 10px 0; font-size: 16px; color: white; }
         .card button { background: #ff4d4d; font-size: 12px; padding: 5px 10px; width: 100%; margin-top: 5px;}
         .card .btn-return { background: var(--gold); color: black; }
         
-        .public-player { background: #222; padding: 12px; border-radius: 8px; margin-bottom: 10px; border-left: 4px solid var(--accent); display: flex; justify-content: space-between; align-items: center;}
-        .public-player.dead { opacity: 0.5; border-color: red; }
+        .public-player { background: #222; padding: 12px; border-radius: 8px; margin-bottom: 10px; border-left: 4px solid var(--accent); display: flex; justify-content: space-between; align-items: center; transition: all 0.3s ease;}
+        .public-player.dead { opacity: 0.5; border-color: red; background: #2a1111;}
         .public-info h4 { margin: 0; color: var(--gold); font-size: 18px;}
         .public-info p { margin: 5px 0 0 0; font-size: 14px; color: #aaa;}
-        .revealed-list { color: #ff4d4d; font-size: 13px; margin-top: 5px;}
+        .revealed-list { color: #ff4d4d; font-size: 14px; margin-top: 5px; font-weight: bold; background: rgba(255,0,0,0.1); padding: 5px; border-radius: 5px;}
         
-        .log-box { height: 250px; overflow-y: auto; font-size: 13px; color: #ddd; background: #111; padding: 10px; border-radius: 8px; line-height: 1.5; }
-        .log-item { border-bottom: 1px solid #333; padding: 5px 0; }
+        .log-box { height: 250px; overflow-y: auto; font-size: 14px; color: #ddd; background: #111; padding: 10px; border-radius: 8px; line-height: 1.6; }
+        .log-item { border-bottom: 1px solid #333; padding: 8px 0; }
+        
+        /* New highlight animation for updates */
+        @keyframes highlight { 0% { background-color: rgba(233, 69, 96, 0.5); } 100% { background-color: #222; } }
+        .highlight-update { animation: highlight 1.5s ease-out; }
 
         @media (max-width: 768px) {
             .grid-layout { grid-template-columns: 1fr; }
@@ -52,7 +56,7 @@
     <!-- Join Screen -->
     <div id="joinScreen" class="screen active">
         <h1>Coup: ক্ষমতা ও বিদ্রোহ</h1>
-        <p style="color:#aaa;">ব্লাফিং এবং ধোঁকা দেওয়ার সেরা বোর্ড গেম</p>
+        <p style="color:#aaa;">ব্লাফিং এবং ধোঁকা দেওয়ার সেরা বোর্ড গেম</p>
         
         <div class="panel" style="max-width: 400px; margin: 30px auto;">
             <input type="text" id="playerName" placeholder="আপনার নাম লিখুন..." autocomplete="off" style="margin-bottom: 15px;">
@@ -62,7 +66,7 @@
             
             <div style="display: flex; gap: 10px;">
                 <input type="text" id="roomCodeInput" placeholder="রুম কোড" style="flex: 2; text-transform: uppercase;">
-                <button onclick="joinRoom()" style="flex: 1;">জয়েন</button>
+                <button onclick="joinRoom()" style="flex: 1;">জয়েন</button>
             </div>
         </div>
     </div>
@@ -71,7 +75,7 @@
     <div id="lobbyScreen" class="screen">
         <h2>রুম কোড: <span id="displayRoomCode" style="color:var(--gold);"></span></h2>
         <div class="panel" style="max-width: 400px; margin: 0 auto; text-align: left;">
-            <h3 style="margin-top:0;">যুক্ত হয়েছেন:</h3>
+            <h3 style="margin-top:0;">যুক্ত হয়েছেন:</h3>
             <ul id="lobbyPlayers" style="font-size:16px; padding-left: 20px;"></ul>
         </div>
         <br>
@@ -89,11 +93,11 @@
             <!-- Left Side: My Player Area -->
             <div>
                 <div class="panel" style="text-align: center; border-color: var(--gold);">
-                    <h3 style="color: white; margin-bottom: 5px;">আমার কয়েন</h3>
+                    <h3 style="color: white; margin-bottom: 5px;">আমার কয়েন</h3>
                     <div class="coin-display">💰 <span id="myCoinCount">0</span></div>
                     
                     <div class="action-buttons">
-                        <button onclick="takeCoin(1, 'সাধারণ আয়')" style="background:#2ecc71;">+১ আয়</button>
+                        <button onclick="takeCoin(1, 'সাধারণ আয়')" style="background:#2ecc71;">+১ আয়</button>
                         <button onclick="takeCoin(2, 'বৈদেশিক সাহায্য')" style="background:#3498db;">+২ সাহায্য</button>
                         <button onclick="takeCoin(3, 'ডিউকের ট্যাক্স')" style="background:#9b59b6;">+৩ ডিউক</button>
                         <button onclick="takeCoin(2, 'ক্যাপ্টেনের চুরি')" style="background:#f1c40f; color:black;">+২ চুরি</button>
@@ -101,7 +105,7 @@
                     <div class="action-buttons" style="margin-top: 8px;">
                         <button onclick="payCoin(-3, 'গুপ্তঘাতকের খুন')" style="background:#e67e22;">-৩ খুন (Assassin)</button>
                         <button onclick="payCoin(-7, 'অভ্যুত্থান (Coup)')" style="background:#e74c3c;">-৭ ক্যু (Coup)</button>
-                        <button onclick="payCoin(-1, 'কয়েন দেওয়া/জরিমানা')" style="background:#555;">-১ কয়েন দিন</button>
+                        <button onclick="payCoin(-1, 'কয়েন দেওয়া/জরিমানা')" style="background:#555;">-১ কয়েন দিন</button>
                     </div>
                 </div>
 
@@ -213,7 +217,7 @@
             socket.emit('action_coin', {uid: myUid, room_code: myRoomCode, amount: amount, action_name: actionName});
         }
         function payCoin(amount, actionName) {
-            if(confirm(`আপনি কি নিশ্চিত যে আপনি ${Math.abs(amount)} কয়েন খরচ করে ${actionName} করবেন?`)) {
+            if(confirm(`আপনি কি নিশ্চিত যে আপনি ${Math.abs(amount)} কয়েন খরচ করে ${actionName} করবেন?`)) {
                 socket.emit('action_coin', {uid: myUid, room_code: myRoomCode, amount: amount, action_name: actionName});
             }
         }
@@ -237,7 +241,7 @@
             const container = document.getElementById('myCardsContainer');
             container.innerHTML = '';
             
-            let isAmbassadorActive = myCards.length > 2; // Extra cards means Ambassador used
+            let isAmbassadorActive = myCards.length > 2;
             document.getElementById('ambassadorBtnContainer').style.display = (myCards.length > 0 && !isAmbassadorActive) ? 'block' : 'none';
 
             myCards.forEach((card, index) => {
@@ -249,19 +253,19 @@
             });
 
             if(myCards.length === 0) {
-                container.innerHTML = `<p style="color:red; width:100%;">আপনি গেম থেকে বাদ পড়েছেন!</p>`;
+                container.innerHTML = `<p style="color:red; width:100%; font-weight:bold;">আপনি গেম থেকে বাদ পড়েছেন!</p>`;
                 document.getElementById('ambassadorBtnContainer').style.display = 'none';
             }
 
-            // Update Public State
+            // Update Public State (Here is where the magic happens for everyone!)
             const publicContainer = document.getElementById('publicPlayersContainer');
             publicContainer.innerHTML = '';
             document.getElementById('deckCount').innerText = data.public.deck_count;
 
             data.public.players.forEach(p => {
-                let statusClass = p.is_dead ? 'dead' : '';
+                let statusClass = p.is_dead ? 'dead' : 'highlight-update';
                 let revealedHtml = p.revealed_cards.length > 0 
-                    ? `<div class="revealed-list">ফাঁস করা কার্ড: ${p.revealed_cards.join(', ')}</div>` 
+                    ? `<div class="revealed-list">💀 ফাঁস করা কার্ড:<br> ${p.revealed_cards.join('<br>')}</div>` 
                     : '';
                 
                 publicContainer.innerHTML += `
@@ -271,7 +275,7 @@
                             <p>লুকানো কার্ড: 🃏 x ${p.hidden_cards_count}</p>
                             ${revealedHtml}
                         </div>
-                        <div style="font-size: 24px;">💰 ${p.coins}</div>
+                        <div style="font-size: 24px; font-weight:bold;">💰 ${p.coins}</div>
                     </div>`;
             });
 
