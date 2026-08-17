@@ -39,15 +39,14 @@
         .log-box { height: 250px; overflow-y: auto; font-size: 14px; color: #ddd; background: #111; padding: 10px; border-radius: 8px; line-height: 1.6; }
         .log-item { border-bottom: 1px solid #333; padding: 8px 0; }
 
-        /* Modal Styles */
         .modal-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); z-index: 2000; justify-content: center; align-items: center; }
         .modal-content { background: #1a1a1a; width: 90%; max-width: 400px; padding: 25px; border-radius: 12px; border: 2px solid var(--accent); text-align: center; }
 
-        /* Turn Indicator Banner */
+        /* Turn Banner */
         .turn-banner { background: #111; padding: 15px; border-radius: 8px; border: 2px solid var(--gold); margin-bottom: 15px; display: flex; justify-content: space-between; align-items: center; }
         .turn-text { font-size: 20px; font-weight: bold; margin: 0; }
+        .banner-buttons { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
 
-        /* Massive Red Alert */
         .massive-alert { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: #ff4d4d; color: white; padding: 40px 60px; font-size: 28px; font-weight: bold; border-radius: 15px; z-index: 9999; box-shadow: 0 0 100px red; text-align: center; display: none; animation: popIn 0.3s ease-out; }
         @keyframes popIn { 0% { transform: translate(-50%, -50%) scale(0.5); opacity: 0; } 100% { transform: translate(-50%, -50%) scale(1); opacity: 1; } }
 
@@ -56,7 +55,6 @@
             .my-cards { flex-wrap: wrap; }
             .card { width: 45%; }
             .turn-banner { flex-direction: column; gap: 10px; text-align: center; }
-            .turn-banner button { width: 100%; }
         }
     </style>
 </head>
@@ -110,16 +108,16 @@
         <!-- Turn Banner (Top) -->
         <div class="turn-banner">
             <p class="turn-text" id="turnDisplay">অপেক্ষা করুন...</p>
-            <div style="display: flex; gap: 10px;">
+            <div class="banner-buttons">
                 <button id="endTurnBtn" onclick="endTurn()" style="background:#2ecc71; display:none;">চাল শেষ করুন ⏭️</button>
                 <button id="challengeBtn" onclick="challengeAction()" style="background:#ff4d4d; display:none;">🚨 চ্যালেঞ্জ করুন!</button>
+                <button onclick="leaveRoom()" style="background: transparent; color: #ff4d4d; border: 1px solid #ff4d4d; font-size: 13px; padding: 10px;">🚪 গেম ছাড়ুন</button>
             </div>
         </div>
 
         <div class="grid-layout">
             <!-- Left Side: My Player Area -->
             <div>
-                <!-- Action Panel (Will be disabled if not turn) -->
                 <div class="panel" id="actionPanel" style="text-align: center; border-color: var(--gold);">
                     <h3 style="color: white; margin-bottom: 5px;">আমার কয়েন</h3>
                     <div class="coin-display">💰 <span id="myCoinCount">0</span></div>
@@ -191,11 +189,15 @@
             socket.emit('join_room', {uid: myUid, name: name, room_code: code});
         }
 
+        // --- আপডেটেড: লিভ রুম ফাংশন ---
         function leaveRoom() {
-            socket.emit('leave_room_event', {uid: myUid, room_code: myRoomCode});
-            localStorage.removeItem('coup_room'); myRoomCode = null;
-            document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
-            document.getElementById('joinScreen').classList.add('active');
+            if(confirm("আপনি কি নিশ্চিত যে আপনি রুম থেকে বের হতে চান? (গেম চলাকালীন বের হলে আপনি বাদ পড়বেন)")) {
+                socket.emit('leave_room_event', {uid: myUid, room_code: myRoomCode});
+                localStorage.removeItem('coup_room'); 
+                myRoomCode = null;
+                document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+                document.getElementById('joinScreen').classList.add('active');
+            }
         }
 
         socket.on('room_joined', (data) => {
@@ -218,7 +220,6 @@
             document.getElementById('gameScreen').classList.add('active');
         });
 
-        // --- Turn & Challenge Logic ---
         function endTurn() { socket.emit('next_turn', {room_code: myRoomCode, uid: myUid}); }
         function challengeAction() { socket.emit('challenge_action', {room_code: myRoomCode, uid: myUid}); }
         
@@ -229,7 +230,6 @@
             setTimeout(() => { alertBox.style.display = 'none'; }, 4000);
         });
 
-        // --- Target Modal Logic ---
         function openTargetModal(actionName, amount) {
             const myCoins = parseInt(document.getElementById('myCoinCount').innerText);
             if(myCoins + amount < 0) { alert("আপনার কাছে পর্যাপ্ত কয়েন নেই!"); return; }
@@ -261,7 +261,6 @@
             closeTargetModal();
         }
 
-        // --- Basic Actions ---
         function takeCoin(amount, actionName) { socket.emit('action_coin', {uid: myUid, room_code: myRoomCode, amount: amount, action_name: actionName}); }
         function useAmbassador() { socket.emit('ambassador_draw', {uid: myUid, room_code: myRoomCode}); }
         
@@ -272,11 +271,9 @@
         }
         function returnCard(index) { socket.emit('ambassador_return', {uid: myUid, room_code: myRoomCode, card_index: index}); }
 
-        // --- State Update ---
         socket.on('game_state_update', (data) => {
             globalPlayers = data.public.players;
             
-            // Turn Enforcement
             const currentTurnUid = data.public.current_turn_uid;
             const isMyTurn = (currentTurnUid === myUid);
             const amIDead = data.private.my_cards.length === 0;
@@ -298,7 +295,6 @@
 
             document.getElementById('challengeBtn').style.display = (!isMyTurn && !amIDead) ? "block" : "none";
 
-            // Private State
             document.getElementById('myCoinCount').innerText = data.private.my_coins;
             const myCards = data.private.my_cards;
             const container = document.getElementById('myCardsContainer');
@@ -316,7 +312,6 @@
 
             if(myCards.length === 0) container.innerHTML = `<p style="color:red; width:100%; font-weight:bold;">আপনি গেম থেকে বাদ পড়েছেন!</p>`;
 
-            // Public State
             const publicContainer = document.getElementById('publicPlayersContainer');
             publicContainer.innerHTML = '';
             data.public.players.forEach(p => {
@@ -333,7 +328,6 @@
                     </div>`;
             });
 
-            // Logs
             const logBox = document.getElementById('actionLogs');
             logBox.innerHTML = '';
             data.public.logs.forEach(log => { logBox.innerHTML += `<div class="log-item">${log}</div>`; });
