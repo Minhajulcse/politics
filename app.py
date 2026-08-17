@@ -8,7 +8,6 @@ app = Flask(__name__)
 app.config['SECRET_KEY'] = 'coup-secret-key-123'
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode='gevent', ping_timeout=60)
 
-# Coup Game Deck (15 cards total: 3 of each)
 COUP_CARDS = [
     "ডিউক (Duke)", "ডিউক (Duke)", "ডিউক (Duke)",
     "গুপ্তঘাতক (Assassin)", "গুপ্তঘাতক (Assassin)", "গুপ্তঘাতক (Assassin)",
@@ -39,6 +38,8 @@ def add_log(room_code, msg):
 def broadcast_game_state(room_code):
     room = rooms[room_code]
     public_players = []
+    
+    # সবার পাবলিক ডাটা একসাথে করা হচ্ছে
     for uid, p in room['players'].items():
         public_players.append({
             'uid': uid,
@@ -55,6 +56,7 @@ def broadcast_game_state(room_code):
         'deck_count': len(room['deck'])
     }
     
+    # রুমের সবাইকে তাদের নিজস্ব প্রাইভেট ডাটা এবং সবার পাবলিক ডাটা পাঠানো হচ্ছে
     for uid, p in room['players'].items():
         if p['online']:
             emit('game_state_update', {
@@ -134,13 +136,13 @@ def handle_start(data):
     
     uids = list(room['players'].keys())
     if len(uids) < 2:
-        emit('error', {'msg': 'কমপক্ষে ২ জন প্লেয়ার দরকার!'}, to=request.sid)
+        emit('error', {'msg': 'কমপক্ষে ২ জন প্লেয়ার দরকার!'}, to=request.sid)
         return
         
     room['status'] = 'playing'
     room['deck'] = COUP_CARDS.copy()
     random.shuffle(room['deck'])
-    room['logs'] = ["🎲 গেম শুরু হয়েছে! সবাইকে ২টি কার্ড ও ২টি কয়েন দেওয়া হলো।"]
+    room['logs'] = ["🎲 গেম শুরু হয়েছে! সবাইকে ২টি কার্ড ও ২টি কয়েন দেওয়া হলো।"]
     
     for uid in uids:
         room['players'][uid]['coins'] = 2
@@ -150,7 +152,6 @@ def handle_start(data):
     emit('game_started', {}, to=room_code)
     broadcast_game_state(room_code)
 
-# --- গেমের অ্যাকশনসমূহ ---
 @socketio.on('action_coin')
 def handle_coin(data):
     room_code = data['room_code']
@@ -162,13 +163,13 @@ def handle_coin(data):
     p = room['players'][uid]
     
     if p['coins'] + amount < 0:
-        return # Not enough coins
+        return 
         
     p['coins'] += amount
     if amount > 0:
-        add_log(room_code, f"💰 <b>{p['name']}</b> {action_name} করে {amount} কয়েন নিয়েছে।")
+        add_log(room_code, f"💰 <b>{p['name']}</b> {action_name} করে {amount} কয়েন নিয়েছে।")
     else:
-        add_log(room_code, f"💸 <b>{p['name']}</b> {action_name} করতে {abs(amount)} কয়েন খরচ করেছে।")
+        add_log(room_code, f"💸 <b>{p['name']}</b> {action_name} করতে {abs(amount)} কয়েন খরচ করেছে।")
         
     broadcast_game_state(room_code)
 
@@ -184,10 +185,10 @@ def handle_reveal(data):
     if 0 <= card_index < len(p['cards']):
         revealed_card = p['cards'].pop(card_index)
         p['revealed_cards'].append(revealed_card)
-        add_log(room_code, f"💀 <b>{p['name']}</b> তার একটি কার্ড ফাঁস করেছে: <b>{revealed_card}</b>!")
+        add_log(room_code, f"💀 <b>{p['name']}</b> তার একটি কার্ড ফাঁস করেছে: <b style='color:#ff4d4d;'>{revealed_card}</b>!")
         
         if len(p['cards']) == 0:
-            add_log(room_code, f"☠️ <b>{p['name']}</b> গেম থেকে বাদ পড়েছে!")
+            add_log(room_code, f"☠️ <b>{p['name']}</b> গেম থেকে বাদ পড়েছে!")
             
         broadcast_game_state(room_code)
 
@@ -218,8 +219,8 @@ def handle_ambassador_return(data):
     if 0 <= card_index < len(p['cards']):
         returned_card = p['cards'].pop(card_index)
         room['deck'].append(returned_card)
-        random.shuffle(room['deck']) # ডেক শাফেল করা হলো
-        add_log(room_code, f"🔄 <b>{p['name']}</b> একটি কার্ড ফেরত দিয়ে ডেক শাফেল করেছে।")
+        random.shuffle(room['deck']) 
+        add_log(room_code, f"🔄 <b>{p['name']}</b> একটি কার্ড ফেরত দিয়ে ডেক শাফেল করেছে।")
         broadcast_game_state(room_code)
 
 @socketio.on('leave_room_event')
