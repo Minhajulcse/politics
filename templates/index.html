@@ -24,7 +24,7 @@
         .action-buttons { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
         .action-buttons button { font-size: 13px; padding: 8px; flex: 1; min-width: 100px; }
         
-        .my-cards { display: flex; gap: 10px; justify-content: center; margin-top: 15px;}
+        .my-cards { display: flex; gap: 10px; justify-content: center; margin-top: 15px; flex-wrap: wrap;}
         .card { background: var(--card-bg); padding: 15px; border-radius: 8px; border: 2px solid var(--accent); width: 130px; text-align: center; transition: transform 0.2s;}
         .card h4 { margin: 0 0 10px 0; font-size: 16px; color: white; }
         .card button { background: #ff4d4d; font-size: 12px; padding: 5px 10px; width: 100%; margin-top: 5px;}
@@ -42,7 +42,6 @@
         .modal-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); z-index: 2000; justify-content: center; align-items: center; }
         .modal-content { background: #1a1a1a; width: 90%; max-width: 400px; padding: 25px; border-radius: 12px; border: 2px solid var(--accent); text-align: center; }
 
-        /* Turn Banner */
         .turn-banner { background: #111; padding: 15px; border-radius: 8px; border: 2px solid var(--gold); margin-bottom: 15px; display: flex; justify-content: space-between; align-items: center; }
         .turn-text { font-size: 20px; font-weight: bold; margin: 0; }
         .banner-buttons { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
@@ -50,9 +49,13 @@
         .massive-alert { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: #ff4d4d; color: white; padding: 40px 60px; font-size: 28px; font-weight: bold; border-radius: 15px; z-index: 9999; box-shadow: 0 0 100px red; text-align: center; display: none; animation: popIn 0.3s ease-out; }
         @keyframes popIn { 0% { transform: translate(-50%, -50%) scale(0.5); opacity: 0; } 100% { transform: translate(-50%, -50%) scale(1); opacity: 1; } }
 
+        /* Punishment Overlay */
+        #mustLoseCardOverlay { display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(200, 0, 0, 0.95); z-index:3000; justify-content:center; align-items:center; flex-direction:column; padding: 20px; box-sizing: border-box;}
+        #mustLoseCardOverlay h2 { color:white; font-size: 30px; text-shadow: 2px 2px 5px black; margin-bottom: 10px;}
+        #mustLoseCardOverlay p { color:#ddd; font-size:18px; margin-bottom: 30px;}
+
         @media (max-width: 768px) {
             .grid-layout { grid-template-columns: 1fr; }
-            .my-cards { flex-wrap: wrap; }
             .card { width: 45%; }
             .turn-banner { flex-direction: column; gap: 10px; text-align: center; }
         }
@@ -62,7 +65,38 @@
 
     <div class="massive-alert" id="massiveAlert"></div>
 
-    <!-- Target Selection Modal -->
+    <!-- Punishment Overlay (Forced Card Loss) -->
+    <div id="mustLoseCardOverlay">
+        <h2>❌ আপনি চ্যালেঞ্জ হেরেছেন!</h2>
+        <p>আপনাকে একটি কার্ড চিরতরে হারাতে হবে। নিচ থেকে একটি কার্ড সিলেক্ট করে ফাঁস করুন:</p>
+        <div id="penaltyCardsContainer" class="my-cards" style="width: 100%; max-width: 600px;"></div>
+    </div>
+
+    <!-- Challenge Modal -->
+    <div id="challengeModal" class="modal-overlay">
+        <div class="modal-content">
+            <h3 style="color:#ff4d4d; margin-top:0;">🚨 চ্যালেঞ্জ করুন</h3>
+            
+            <p style="text-align: left; margin: 5px 0; color: #aaa;">কাকে চ্যালেঞ্জ করবেন?</p>
+            <select id="challengeTarget" style="margin-bottom: 15px;"></select>
+            
+            <p style="text-align: left; margin: 5px 0; color: #aaa;">তিনি কোন কার্ড দাবি করেছেন?</p>
+            <select id="challengeCharacter" style="margin-bottom: 20px;">
+                <option value="ডিউক (Duke)">ডিউক (Duke)</option>
+                <option value="গুপ্তঘাতক (Assassin)">গুপ্তঘাতক (Assassin)</option>
+                <option value="ক্যাপ্টেন (Captain)">ক্যাপ্টেন (Captain)</option>
+                <option value="রাষ্ট্রদূত (Ambassador)">রাষ্ট্রদূত (Ambassador)</option>
+                <option value="কাউন্টেস (Contessa)">কাউন্টেস (Contessa)</option>
+            </select>
+            
+            <div style="display:flex; gap:10px;">
+                <button onclick="closeChallengeModal()" style="flex:1; background:#555;">বাতিল</button>
+                <button onclick="confirmChallenge()" style="flex:1; background:#ff4d4d;">চ্যালেঞ্জ করুন!</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Target Selection Modal (For Assassinate/Steal) -->
     <div id="targetModal" class="modal-overlay">
         <div class="modal-content">
             <h3 id="targetModalTitle" style="color:var(--accent); margin-top:0;">কাকে টার্গেট করবেন?</h3>
@@ -105,26 +139,24 @@
     <!-- Game Screen -->
     <div id="gameScreen" class="screen">
         
-        <!-- Turn Banner (Top) -->
         <div class="turn-banner">
             <p class="turn-text" id="turnDisplay">অপেক্ষা করুন...</p>
             <div class="banner-buttons">
                 <button id="endTurnBtn" onclick="endTurn()" style="background:#2ecc71; display:none;">চাল শেষ করুন ⏭️</button>
-                <button id="challengeBtn" onclick="challengeAction()" style="background:#ff4d4d; display:none;">🚨 চ্যালেঞ্জ করুন!</button>
+                <button id="challengeBtn" onclick="openChallengeModal()" style="background:#ff4d4d; display:none;">🚨 চ্যালেঞ্জ করুন!</button>
                 <button onclick="leaveRoom()" style="background: transparent; color: #ff4d4d; border: 1px solid #ff4d4d; font-size: 13px; padding: 10px;">🚪 গেম ছাড়ুন</button>
             </div>
         </div>
 
         <div class="grid-layout">
-            <!-- Left Side: My Player Area -->
             <div>
                 <div class="panel" id="actionPanel" style="text-align: center; border-color: var(--gold);">
                     <h3 style="color: white; margin-bottom: 5px;">আমার কয়েন</h3>
                     <div class="coin-display">💰 <span id="myCoinCount">0</span></div>
                     
                     <div class="action-buttons">
-                        <button onclick="takeCoin(1, 'সাধারণ আয়')" style="background:#2ecc71;">+১ আয়</button>
-                        <button onclick="takeCoin(2, 'বৈদেশিক সাহায্য')" style="background:#3498db;">+২ সাহায্য</button>
+                        <button onclick="takeCoin(1, 'সাধারণ আয় (Income)')" style="background:#2ecc71;">+১ আয়</button>
+                        <button onclick="takeCoin(2, 'বৈদেশিক সাহায্য (Aid)')" style="background:#3498db;">+২ সাহায্য</button>
                         <button onclick="takeCoin(3, 'ডিউকের ট্যাক্স')" style="background:#9b59b6;">+৩ ডিউক</button>
                         <button onclick="openTargetModal('ক্যাপ্টেনের চুরি', 0)" style="background:#f1c40f; color:black;">+২ চুরি</button>
                     </div>
@@ -144,7 +176,6 @@
                 </div>
             </div>
 
-            <!-- Right Side: Public Board & Logs -->
             <div>
                 <div class="panel" style="margin-bottom: 15px;">
                     <h3>সবার অবস্থা</h3>
@@ -189,12 +220,10 @@
             socket.emit('join_room', {uid: myUid, name: name, room_code: code});
         }
 
-        // --- আপডেটেড: লিভ রুম ফাংশন ---
         function leaveRoom() {
-            if(confirm("আপনি কি নিশ্চিত যে আপনি রুম থেকে বের হতে চান? (গেম চলাকালীন বের হলে আপনি বাদ পড়বেন)")) {
+            if(confirm("আপনি কি নিশ্চিত যে আপনি গেম থেকে বের হতে চান?")) {
                 socket.emit('leave_room_event', {uid: myUid, room_code: myRoomCode});
-                localStorage.removeItem('coup_room'); 
-                myRoomCode = null;
+                localStorage.removeItem('coup_room'); myRoomCode = null;
                 document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
                 document.getElementById('joinScreen').classList.add('active');
             }
@@ -221,8 +250,30 @@
         });
 
         function endTurn() { socket.emit('next_turn', {room_code: myRoomCode, uid: myUid}); }
-        function challengeAction() { socket.emit('challenge_action', {room_code: myRoomCode, uid: myUid}); }
         
+        // --- Challenge Modal Functions ---
+        function openChallengeModal() {
+            const sel = document.getElementById('challengeTarget');
+            sel.innerHTML = '';
+            globalPlayers.forEach(p => {
+                if(!p.is_dead && p.uid !== myUid) {
+                    sel.innerHTML += `<option value="${p.uid}">${p.name}</option>`;
+                }
+            });
+            if(sel.innerHTML === '') { alert("চ্যালেঞ্জ করার মতো কেউ নেই!"); return; }
+            document.getElementById('challengeModal').style.display = 'flex';
+        }
+        function closeChallengeModal() { document.getElementById('challengeModal').style.display = 'none'; }
+        
+        function confirmChallenge() {
+            const targetUid = document.getElementById('challengeTarget').value;
+            const claimedChar = document.getElementById('challengeCharacter').value;
+            socket.emit('execute_challenge', {
+                uid: myUid, room_code: myRoomCode, target_uid: targetUid, claimed_character: claimedChar
+            });
+            closeChallengeModal();
+        }
+
         socket.on('play_alert', (data) => {
             const alertBox = document.getElementById('massiveAlert');
             alertBox.innerText = data.msg;
@@ -230,21 +281,17 @@
             setTimeout(() => { alertBox.style.display = 'none'; }, 4000);
         });
 
+        // --- Target Action Functions ---
         function openTargetModal(actionName, amount) {
             const myCoins = parseInt(document.getElementById('myCoinCount').innerText);
             if(myCoins + amount < 0) { alert("আপনার কাছে পর্যাপ্ত কয়েন নেই!"); return; }
             
-            pendingTargetAction = actionName;
-            pendingTargetAmount = amount;
+            pendingTargetAction = actionName; pendingTargetAmount = amount;
             
-            const sel = document.getElementById('targetSelect');
-            sel.innerHTML = '';
+            const sel = document.getElementById('targetSelect'); sel.innerHTML = '';
             globalPlayers.forEach(p => {
-                if(!p.is_dead && p.uid !== myUid) {
-                    sel.innerHTML += `<option value="${p.uid}">${p.name}</option>`;
-                }
+                if(!p.is_dead && p.uid !== myUid) sel.innerHTML += `<option value="${p.uid}">${p.name}</option>`;
             });
-            
             if(sel.innerHTML === '') { alert("টার্গেট করার মতো কেউ বেঁচে নেই!"); return; }
             document.getElementById('targetModalTitle').innerText = `${actionName}: কাকে টার্গেট করবেন?`;
             document.getElementById('targetModal').style.display = 'flex';
@@ -255,19 +302,21 @@
         function confirmTargetAction() {
             const targetUid = document.getElementById('targetSelect').value;
             socket.emit('action_target', {
-                uid: myUid, room_code: myRoomCode, target_uid: targetUid, 
-                amount: pendingTargetAmount, action_name: pendingTargetAction
+                uid: myUid, room_code: myRoomCode, target_uid: targetUid, amount: pendingTargetAmount, action_name: pendingTargetAction
             });
             closeTargetModal();
         }
 
         function takeCoin(amount, actionName) { socket.emit('action_coin', {uid: myUid, room_code: myRoomCode, amount: amount, action_name: actionName}); }
         function useAmbassador() { socket.emit('ambassador_draw', {uid: myUid, room_code: myRoomCode}); }
-        
         function revealCard(index) {
             if(confirm("সাবধান! আপনি কি একটি কার্ড চিরতরে ফাঁস করতে চান?")) {
                 socket.emit('reveal_card', {uid: myUid, room_code: myRoomCode, card_index: index});
             }
+        }
+        function penaltyReveal(index) {
+            // For forced penalty, no confirmation needed
+            socket.emit('reveal_card', {uid: myUid, room_code: myRoomCode, card_index: index});
         }
         function returnCard(index) { socket.emit('ambassador_return', {uid: myUid, room_code: myRoomCode, card_index: index}); }
 
@@ -277,15 +326,21 @@
             const currentTurnUid = data.public.current_turn_uid;
             const isMyTurn = (currentTurnUid === myUid);
             const amIDead = data.private.my_cards.length === 0;
+            const mustLoseCard = data.private.must_lose_card;
 
+            // Turn Display Update
             const turnPlayer = globalPlayers.find(p => p.uid === currentTurnUid);
             if(turnPlayer) {
                 document.getElementById('turnDisplay').innerText = isMyTurn ? "➡️ এখন আপনার চাল!" : `⏳ এখন ${turnPlayer.name} এর চাল`;
                 document.getElementById('turnDisplay').style.color = isMyTurn ? "#2ecc71" : "white";
             }
 
+            // Challenge Button (Visible to everyone except dead players)
+            document.getElementById('challengeBtn').style.display = (!amIDead) ? "block" : "none";
+
+            // Action Panel Logic
             const actionPanel = document.getElementById('actionPanel');
-            if(isMyTurn && !amIDead) {
+            if(isMyTurn && !amIDead && !mustLoseCard) {
                 actionPanel.style.opacity = "1"; actionPanel.style.pointerEvents = "auto";
                 document.getElementById('endTurnBtn').style.display = "block";
             } else {
@@ -293,13 +348,12 @@
                 document.getElementById('endTurnBtn').style.display = "none";
             }
 
-            document.getElementById('challengeBtn').style.display = (!isMyTurn && !amIDead) ? "block" : "none";
-
             document.getElementById('myCoinCount').innerText = data.private.my_coins;
             const myCards = data.private.my_cards;
+            
+            // Render Cards in Normal Panel
             const container = document.getElementById('myCardsContainer');
             container.innerHTML = '';
-            
             let isAmbassadorActive = myCards.length > 2;
             document.getElementById('ambassadorBtnContainer').style.display = isAmbassadorActive ? 'block' : 'none';
 
@@ -312,6 +366,20 @@
 
             if(myCards.length === 0) container.innerHTML = `<p style="color:red; width:100%; font-weight:bold;">আপনি গেম থেকে বাদ পড়েছেন!</p>`;
 
+            // Penalty Overlay Logic
+            const overlay = document.getElementById('mustLoseCardOverlay');
+            if(mustLoseCard && !amIDead) {
+                overlay.style.display = 'flex';
+                const penaltyContainer = document.getElementById('penaltyCardsContainer');
+                penaltyContainer.innerHTML = '';
+                myCards.forEach((card, index) => {
+                    penaltyContainer.innerHTML += `<div class="card"><h4>${card}</h4><button onclick="penaltyReveal(${index})" style="background:black;">এই কার্ডটি ফেলুন</button></div>`;
+                });
+            } else {
+                overlay.style.display = 'none';
+            }
+
+            // Public State
             const publicContainer = document.getElementById('publicPlayersContainer');
             publicContainer.innerHTML = '';
             data.public.players.forEach(p => {
@@ -328,6 +396,7 @@
                     </div>`;
             });
 
+            // Logs
             const logBox = document.getElementById('actionLogs');
             logBox.innerHTML = '';
             data.public.logs.forEach(log => { logBox.innerHTML += `<div class="log-item">${log}</div>`; });
