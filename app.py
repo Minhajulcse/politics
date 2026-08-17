@@ -148,7 +148,7 @@ def handle_start(data):
     room['deck'] = COUP_CARDS.copy()
     random.shuffle(room['deck'])
     room['turn_order'] = uids.copy()
-    random.shuffle(room['turn_order']) # চালের সিরিয়াল লটারি করা হলো
+    random.shuffle(room['turn_order'])
     room['turn_index'] = 0
     
     first_player = room['players'][room['turn_order'][0]]['name']
@@ -167,7 +167,6 @@ def handle_next_turn(data):
     room_code = data['room_code']
     room = rooms[room_code]
     
-    # মৃত প্লেয়ারদের বাদ দিয়ে পরের জনের কাছে চাল পাঠানো
     for _ in range(len(room['turn_order'])):
         room['turn_index'] = (room['turn_index'] + 1) % len(room['turn_order'])
         next_uid = room['turn_order'][room['turn_index']]
@@ -193,7 +192,6 @@ def handle_coin(data):
     add_log(room_code, f"⚡ <b>{p['name']}</b> {action_name} করেছে।")
     broadcast_game_state(room_code)
 
-# --- টার্গেট করা অ্যাকশনসমূহ (খুন, চুরি, ক্যু) ---
 @socketio.on('action_target')
 def handle_action_target(data):
     room_code = data['room_code']
@@ -206,20 +204,19 @@ def handle_action_target(data):
     p = room['players'][uid]
     target_p = room['players'][target_uid]
     
-    if amount < 0 and p['coins'] + amount < 0: return # কয়েন চেক
+    if amount < 0 and p['coins'] + amount < 0: return 
     
     if action_name == 'ক্যাপ্টেনের চুরি':
         stolen = min(2, target_p['coins'])
         target_p['coins'] -= stolen
         p['coins'] += stolen
-        add_log(room_code, f"🥷 <b>{p['name']}</b> ক্যাপ্টেন ব্যবহার করে <b>{target_p['name']}</b> এর কাছ থেকে {stolen} কয়েন চুরি করেছে!")
+        add_log(room_code, f"🥷 <b>{p['name']}</b> ক্যাপ্টেন ব্যবহার করে <b>{target_p['name']}</b> এর কাছ থেকে {stolen} কয়েন চুরি করেছে!")
     else:
-        p['coins'] += amount # খুন বা ক্যু এর কয়েন কাটা হলো
+        p['coins'] += amount
         add_log(room_code, f"⚔️ <b>{p['name']}</b> <b>{target_p['name']}</b> এর উপর {action_name} করেছে!")
         
     broadcast_game_state(room_code)
 
-# --- চ্যালেঞ্জ সিস্টেম ---
 @socketio.on('challenge_action')
 def handle_challenge(data):
     room_code = data['room_code']
@@ -280,15 +277,27 @@ def handle_ambassador_return(data):
 def handle_leave_room(data):
     uid = data.get('uid')
     room_code = data.get('room_code')
+    
     if room_code in rooms and uid in rooms[room_code]['players']:
+        room = rooms[room_code]
         leave_room(room_code)
-        del rooms[room_code]['players'][uid]
-        if rooms[room_code]['host_uid'] == uid:
-            if rooms[room_code]['players']:
-                rooms[room_code]['host_uid'] = list(rooms[room_code]['players'].keys())[0]
+        
+        # গেম চলাকালীন বের হলে তাকে ডেড (Dead) বানিয়ে দেওয়া হবে
+        if room['status'] == 'playing':
+            room['players'][uid]['online'] = False
+            room['players'][uid]['cards'] = [] # কার্ড খালি করে দেওয়া হলো যাতে তার টার্ন না আসে
+            add_log(room_code, f"🚪 <b>{room['players'][uid]['name']}</b> গেম ছেড়ে চলে গেছে!")
+            broadcast_game_state(room_code)
+        else:
+            del room['players'][uid]
+            
+        if room['host_uid'] == uid:
+            if room['players']:
+                room['host_uid'] = list(room['players'].keys())[0]
             else:
                 del rooms[room_code]
                 return
+                
         emit('update_lobby', get_lobby_data(room_code), to=room_code)
 
 @socketio.on('disconnect')
@@ -299,6 +308,12 @@ def handle_disconnect():
                 p['online'] = False
                 if room['status'] == 'waiting':
                     del room['players'][uid]
+                    if room['host_uid'] == uid:
+                        if room['players']:
+                            room['host_uid'] = list(room['players'].keys())[0]
+                        else:
+                            del rooms[room_code]
+                            return
                 emit('update_lobby', get_lobby_data(room_code), to=room_code)
                 return
 
