@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="bn">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Coup: ক্ষমতা ও বিদ্রোহ</title>
+    <!-- আপনি যদি অফলাইনে খেলতে চান, তবে এই লিংক পরিবর্তন করে লোকাল ফাইল দিবেন -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.min.js"></script>
+    <style>
+        :root { --bg: #1a1a2e; --text: #e0e0e0; --accent: #e94560; --gold: #f9a826; --panel: #16213e; --card-bg: #0f3460; }
+        body { font-family: 'Segoe UI', Tahoma, sans-serif; background: var(--bg); color: var(--text); margin: 0; padding: 15px; text-align: center; }
+        h1, h2, h3 { color: var(--accent); margin-top:0; }
+        .screen { display: none; max-width: 1000px; margin: 0 auto; width: 100%; box-sizing: border-box; }
+        .active { display: block; }
+        
+        input { padding: 12px; font-size: 16px; background: #222; color: white; border: 1px solid #555; border-radius: 8px; width: 100%; box-sizing: border-box; text-align: center;}
+        input:focus { outline:none; border-color:var(--accent); }
+        button { padding: 12px 15px; background: var(--accent); color: white; border: none; border-radius: 8px; font-size: 15px; font-weight: bold; cursor: pointer; transition:0.2s; }
+        button:hover { opacity: 0.8; }
+        
+        .grid-layout { display: grid; grid-template-columns: 1fr 300px; gap: 20px; text-align: left; margin-top: 20px;}
+        .panel { background: var(--panel); padding: 15px; border-radius: 12px; border: 1px solid #333; }
+        
+        .coin-display { font-size: 40px; color: var(--gold); font-weight: bold; margin: 10px 0; text-align: center; }
+        .action-buttons { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
+        .action-buttons button { font-size: 13px; padding: 8px; flex: 1; min-width: 100px; }
+        
+        .my-cards { display: flex; gap: 10px; justify-content: center; margin-top: 15px;}
+        .card { background: var(--card-bg); padding: 15px; border-radius: 8px; border: 2px solid var(--accent); width: 130px; text-align: center; position: relative;}
+        .card h4 { margin: 0 0 10px 0; font-size: 16px; color: white; }
+        .card button { background: #ff4d4d; font-size: 12px; padding: 5px 10px; width: 100%; margin-top: 5px;}
+        .card .btn-return { background: var(--gold); color: black; }
+        
+        .public-player { background: #222; padding: 12px; border-radius: 8px; margin-bottom: 10px; border-left: 4px solid var(--accent); display: flex; justify-content: space-between; align-items: center;}
+        .public-player.dead { opacity: 0.5; border-color: red; }
+        .public-info h4 { margin: 0; color: var(--gold); font-size: 18px;}
+        .public-info p { margin: 5px 0 0 0; font-size: 14px; color: #aaa;}
+        .revealed-list { color: #ff4d4d; font-size: 13px; margin-top: 5px;}
+        
+        .log-box { height: 250px; overflow-y: auto; font-size: 13px; color: #ddd; background: #111; padding: 10px; border-radius: 8px; line-height: 1.5; }
+        .log-item { border-bottom: 1px solid #333; padding: 5px 0; }
+
+        @media (max-width: 768px) {
+            .grid-layout { grid-template-columns: 1fr; }
+            .my-cards { flex-wrap: wrap; }
+            .card { width: 45%; }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Join Screen -->
+    <div id="joinScreen" class="screen active">
+        <h1>Coup: ক্ষমতা ও বিদ্রোহ</h1>
+        <p style="color:#aaa;">ব্লাফিং এবং ধোঁকা দেওয়ার সেরা বোর্ড গেম</p>
+        
+        <div class="panel" style="max-width: 400px; margin: 30px auto;">
+            <input type="text" id="playerName" placeholder="আপনার নাম লিখুন..." autocomplete="off" style="margin-bottom: 15px;">
+            <button onclick="createRoom()" style="background: #4CAF50; width: 100%;">নতুন রুম খুলুন</button>
+            
+            <div style="margin: 20px 0; color: #666;">অথবা</div>
+            
+            <div style="display: flex; gap: 10px;">
+                <input type="text" id="roomCodeInput" placeholder="রুম কোড" style="flex: 2; text-transform: uppercase;">
+                <button onclick="joinRoom()" style="flex: 1;">জয়েন</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Lobby Screen -->
+    <div id="lobbyScreen" class="screen">
+        <h2>রুম কোড: <span id="displayRoomCode" style="color:var(--gold);"></span></h2>
+        <div class="panel" style="max-width: 400px; margin: 0 auto; text-align: left;">
+            <h3 style="margin-top:0;">যুক্ত হয়েছেন:</h3>
+            <ul id="lobbyPlayers" style="font-size:16px; padding-left: 20px;"></ul>
+        </div>
+        <br>
+        <div style="max-width: 400px; margin: 0 auto;">
+            <button id="startGameBtn" style="display:none; background:#4CAF50; width: 100%; margin-bottom: 10px;" onclick="startGame()">গেম শুরু করুন</button>
+            <p id="waitMsg" style="color:#aaa; font-size: 14px;">হোস্ট গেম শুরু করার জন্য অপেক্ষা করছেন...</p>
+            <button onclick="leaveRoom()" style="background: transparent; color: #ff4d4d; border: 1px solid #ff4d4d; width: 100%; margin-top: 10px;">রুম থেকে বের হোন</button>
+        </div>
+    </div>
+
+    <!-- Game Screen -->
+    <div id="gameScreen" class="screen">
+        <div class="grid-layout">
+            
+            <!-- Left Side: My Player Area -->
+            <div>
+                <div class="panel" style="text-align: center; border-color: var(--gold);">
+                    <h3 style="color: white; margin-bottom: 5px;">আমার কয়েন</h3>
+                    <div class="coin-display">💰 <span id="myCoinCount">0</span></div>
+                    
+                    <div class="action-buttons">
+                        <button onclick="takeCoin(1, 'সাধারণ আয়')" style="background:#2ecc71;">+১ আয়</button>
+                        <button onclick="takeCoin(2, 'বৈদেশিক সাহায্য')" style="background:#3498db;">+২ সাহায্য</button>
+                        <button onclick="takeCoin(3, 'ডিউকের ট্যাক্স')" style="background:#9b59b6;">+৩ ডিউক</button>
+                        <button onclick="takeCoin(2, 'ক্যাপ্টেনের চুরি')" style="background:#f1c40f; color:black;">+২ চুরি</button>
+                    </div>
+                    <div class="action-buttons" style="margin-top: 8px;">
+                        <button onclick="payCoin(-3, 'গুপ্তঘাতকের খুন')" style="background:#e67e22;">-৩ খুন (Assassin)</button>
+                        <button onclick="payCoin(-7, 'অভ্যুত্থান (Coup)')" style="background:#e74c3c;">-৭ ক্যু (Coup)</button>
+                        <button onclick="payCoin(-1, 'কয়েন দেওয়া/জরিমানা')" style="background:#555;">-১ কয়েন দিন</button>
+                    </div>
+                </div>
+
+                <div class="panel" style="margin-top: 15px;">
+                    <h3 style="text-align: center;">আমার কার্ড (গোপন)</h3>
+                    
+                    <div id="ambassadorBtnContainer" style="text-align: center; margin-bottom: 15px; display: none;">
+                        <button onclick="useAmbassador()" style="background: var(--gold); color: black; width: 100%;">📜 রাষ্ট্রদূত (২টি কার্ড টানুন)</button>
+                        <p style="font-size: 12px; color: #aaa; margin: 5px 0 0 0;">রাষ্ট্রদূত কার্ড থাকলে এটি ব্যবহার করে ডেক থেকে নতুন কার্ড দেখুন।</p>
+                    </div>
+
+                    <div class="my-cards" id="myCardsContainer">
+                        <!-- Cards will be injected here -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right Side: Public Board & Logs -->
+            <div>
+                <div class="panel" style="margin-bottom: 15px;">
+                    <h3>সবার অবস্থা</h3>
+                    <p style="font-size: 12px; color: #aaa; margin-top: -10px;">ডেকের কার্ড বাকি: <span id="deckCount">0</span></p>
+                    <div id="publicPlayersContainer">
+                        <!-- Public info injected here -->
+                    </div>
+                </div>
+
+                <div class="panel">
+                    <h3>অ্যাকশন লগ</h3>
+                    <div class="log-box" id="actionLogs">
+                        <!-- Logs injected here -->
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let socket = io({ transports: ['polling', 'websocket'] });
+
+        let myUid = localStorage.getItem('coup_uid') || Math.random().toString(36).substring(2, 10);
+        localStorage.setItem('coup_uid', myUid);
+        let myRoomCode = localStorage.getItem('coup_room');
+        let myName = localStorage.getItem('coup_name');
+        let isHost = false;
+
+        socket.on('connect', () => {
+            if (myRoomCode && myName) {
+                socket.emit('join_room', { uid: myUid, name: myName, room_code: myRoomCode });
+            } else {
+                if (myName) document.getElementById('playerName').value = myName;
+            }
+        });
+
+        function createRoom() {
+            const name = document.getElementById('playerName').value.trim();
+            if(!name) return;
+            myName = name;
+            localStorage.setItem('coup_name', name);
+            socket.emit('create_room', {uid: myUid, name: name});
+        }
+
+        function joinRoom() {
+            const name = document.getElementById('playerName').value.trim();
+            const code = document.getElementById('roomCodeInput').value.trim().toUpperCase();
+            if(!name || !code) return;
+            myName = name;
+            localStorage.setItem('coup_name', name);
+            socket.emit('join_room', {uid: myUid, name: name, room_code: code});
+        }
+
+        function leaveRoom() {
+            socket.emit('leave_room_event', {uid: myUid, room_code: myRoomCode});
+            localStorage.removeItem('coup_room');
+            myRoomCode = null;
+            document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+            document.getElementById('joinScreen').classList.add('active');
+        }
+
+        socket.on('room_joined', (data) => {
+            myRoomCode = data.room_code;
+            isHost = data.is_host;
+            localStorage.setItem('coup_room', myRoomCode);
+            document.getElementById('displayRoomCode').innerText = myRoomCode;
+            document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+            document.getElementById('lobbyScreen').classList.add('active');
+        });
+
+        socket.on('update_lobby', (data) => {
+            const list = document.getElementById('lobbyPlayers');
+            list.innerHTML = '';
+            data.players.forEach(p => {
+                let badge = p.uid === data.host ? '👑' : '';
+                list.innerHTML += `<li>${p.name} ${badge}</li>`;
+            });
+            document.getElementById('startGameBtn').style.display = isHost ? 'block' : 'none';
+            document.getElementById('waitMsg').style.display = isHost ? 'none' : 'block';
+        });
+
+        function startGame() { socket.emit('start_game', {room_code: myRoomCode}); }
+
+        socket.on('game_started', () => {
+            document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+            document.getElementById('gameScreen').classList.add('active');
+        });
+
+        // Game Action Functions
+        function takeCoin(amount, actionName) {
+            socket.emit('action_coin', {uid: myUid, room_code: myRoomCode, amount: amount, action_name: actionName});
+        }
+        function payCoin(amount, actionName) {
+            if(confirm(`আপনি কি নিশ্চিত যে আপনি ${Math.abs(amount)} কয়েন খরচ করে ${actionName} করবেন?`)) {
+                socket.emit('action_coin', {uid: myUid, room_code: myRoomCode, amount: amount, action_name: actionName});
+            }
+        }
+        function revealCard(index) {
+            if(confirm("সাবধান! আপনি কি একটি কার্ড চিরতরে ফাঁস করতে চান? (আপনার ১ লাইফ কমে যাবে)")) {
+                socket.emit('reveal_card', {uid: myUid, room_code: myRoomCode, card_index: index});
+            }
+        }
+        function useAmbassador() {
+            socket.emit('ambassador_draw', {uid: myUid, room_code: myRoomCode});
+        }
+        function returnCard(index) {
+            socket.emit('ambassador_return', {uid: myUid, room_code: myRoomCode, card_index: index});
+        }
+
+        // State Update
+        socket.on('game_state_update', (data) => {
+            // Update Private State
+            document.getElementById('myCoinCount').innerText = data.private.my_coins;
+            const myCards = data.private.my_cards;
+            const container = document.getElementById('myCardsContainer');
+            container.innerHTML = '';
+            
+            let isAmbassadorActive = myCards.length > 2; // Extra cards means Ambassador used
+            document.getElementById('ambassadorBtnContainer').style.display = (myCards.length > 0 && !isAmbassadorActive) ? 'block' : 'none';
+
+            myCards.forEach((card, index) => {
+                let btnHtml = isAmbassadorActive 
+                    ? `<button class="btn-return" onclick="returnCard(${index})">ডেকে ফেরত দিন</button>`
+                    : `<button onclick="revealCard(${index})">ফাঁস করুন (Reveal)</button>`;
+                
+                container.innerHTML += `<div class="card"><h4>${card}</h4>${btnHtml}</div>`;
+            });
+
+            if(myCards.length === 0) {
+                container.innerHTML = `<p style="color:red; width:100%;">আপনি গেম থেকে বাদ পড়েছেন!</p>`;
+                document.getElementById('ambassadorBtnContainer').style.display = 'none';
+            }
+
+            // Update Public State
+            const publicContainer = document.getElementById('publicPlayersContainer');
+            publicContainer.innerHTML = '';
+            document.getElementById('deckCount').innerText = data.public.deck_count;
+
+            data.public.players.forEach(p => {
+                let statusClass = p.is_dead ? 'dead' : '';
+                let revealedHtml = p.revealed_cards.length > 0 
+                    ? `<div class="revealed-list">ফাঁস করা কার্ড: ${p.revealed_cards.join(', ')}</div>` 
+                    : '';
+                
+                publicContainer.innerHTML += `
+                    <div class="public-player ${statusClass}">
+                        <div class="public-info">
+                            <h4>${p.name} ${p.uid === myUid ? '(আপনি)' : ''}</h4>
+                            <p>লুকানো কার্ড: 🃏 x ${p.hidden_cards_count}</p>
+                            ${revealedHtml}
+                        </div>
+                        <div style="font-size: 24px;">💰 ${p.coins}</div>
+                    </div>`;
+            });
+
+            // Update Logs
+            const logBox = document.getElementById('actionLogs');
+            logBox.innerHTML = '';
+            data.public.logs.forEach(log => {
+                logBox.innerHTML += `<div class="log-item">${log}</div>`;
+            });
+        });
+
+        socket.on('error', (data) => { 
+            alert(data.msg); 
+            if (data.clear_storage) {
+                localStorage.removeItem('coup_room');
+                myRoomCode = null;
+                document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+                document.getElementById('joinScreen').classList.add('active');
+            }
+        });
+    </script>
+</body>
+</html>
