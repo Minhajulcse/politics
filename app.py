@@ -66,7 +66,8 @@ def broadcast_game_state(room_code):
                 'public': public_state,
                 'private': {
                     'my_cards': p['cards'],
-                    'my_coins': p['coins']
+                    'my_coins': p['coins'],
+                    'must_lose_card': p.get('must_lose_card', False)
                 }
             }, to=p['sid'])
 
@@ -92,7 +93,7 @@ def handle_create(data):
     join_room(room_code)
     rooms[room_code]['players'][uid] = {
         'name': name, 'sid': request.sid, 'online': True,
-        'coins': 0, 'cards': [], 'revealed_cards': []
+        'coins': 0, 'cards': [], 'revealed_cards': [], 'must_lose_card': False
     }
     
     emit('room_joined', {'room_code': room_code, 'uid': uid, 'is_host': True}, to=request.sid)
@@ -117,7 +118,7 @@ def handle_join(data):
     join_room(room_code)
     
     if uid not in room['players']:
-        room['players'][uid] = {'name': name, 'sid': request.sid, 'online': True, 'coins': 0, 'cards': [], 'revealed_cards': []}
+        room['players'][uid] = {'name': name, 'sid': request.sid, 'online': True, 'coins': 0, 'cards': [], 'revealed_cards': [], 'must_lose_card': False}
     else:
         room['players'][uid]['sid'] = request.sid
         room['players'][uid]['online'] = True
@@ -158,6 +159,7 @@ def handle_start(data):
         room['players'][uid]['coins'] = 2
         room['players'][uid]['cards'] = [room['deck'].pop(), room['deck'].pop()]
         room['players'][uid]['revealed_cards'] = []
+        room['players'][uid]['must_lose_card'] = False
         
     emit('game_started', {}, to=room_code)
     broadcast_game_state(room_code)
@@ -176,6 +178,68 @@ def handle_next_turn(data):
     next_player_name = room['players'][room['turn_order'][room['turn_index']]]['name']
     add_log(room_code, f"➡️ এখন <b>{next_player_name}</b> এর চাল।")
     broadcast_game_state(room_code)
+
+# --- Challenge System ---
+@socketio.on('execute_challenge')
+def handle_challenge(data):
+    room_code = data['room_code']
+    uid = data['uid'] # Challenger
+    target_uid = data['target_uid']
+    claimed_char = data['claimed_character']
+    
+    room = rooms[room_code]
+    challenger = room['players'][uid]
+    target = room['players'][target_uid]
+    
+    emit('play_alert', {'msg': f"🚨 {challenger['name']} চ্যালেঞ্জ করেছে {target['name']} কে!"}, to=room_code)
+    
+    has_card = False
+    card_index = -1
+    for i, c in enumerate(target['cards']):
+        if c == claimed_char:
+            has_card = True
+            card_index = i
+            break
+            
+    if has_card:
+        # Target Wins, Challenger Loses
+        add_log(room_code, f"✅ <b>{target['name']}</b> প্রমাণ করেছে তার কাছে <b style='color:#f1c40f;'>{claimed_char}</b> আছে! <b>{challenger['name']}</b> চ্যালেঞ্জ হেরেছে।")
+        
+        # Swap Target's Card
+        swapped_card = target['cards'].pop(card_index)
+        room['deck'].append(swapped_card)
+        random.shuffle(room['deck'])
+        target['cards'].append(room['deck'].pop())
+        add_log(room_code, f"🔄 <b>{target['name']}</b> তার প্রমাণিত কার্ডটি ডেক-এ দিয়ে নতুন একটি কার্ড নিয়েছে।")
+        
+        # Enforce Penalty on Challenger
+        challenger['must_lose_card'] = True
+    else:
+        # Bluff Caught! Target Loses
+        add_log(room_code, f"❌ <b>{target['name']}</b> ব্লাফ দিচ্ছিল! তার কাছে <b style='color:#f1c40f;'>{claimed_char}</b> নেই। সে চ্যালেঞ্জ হেরেছে।")
+        
+        # Enforce Penalty on Target
+        target['must_lose_card'] = True
+        
+    broadcast_game_state(room_code)
+
+@socketio.on('reveal_card')
+def handle_reveal(data):
+    room_code = data['room_code']
+    uid = data['uid']
+    card_index = data['card_index']
+    room = rooms[room_code]
+    p = room['players'][uid]
+    
+    if 0 <= card_index < len(p['cards']):
+        revealed_card = p['cards'].pop(card_index)
+        p['revealed_cards'].append(revealed_card)
+        p['must_lose_card'] = False # Penalty cleared
+        
+        add_log(room_code, f"💀 <b>{p['name']}</b> একটি কার্ড ফাঁস করেছে: <b style='color:#ff4d4d;'>{revealed_card}</b>!")
+        if len(p['cards']) == 0:
+            add_log(room_code, f"☠️ <b>{p['name']}</b> গেম থেকে বাদ পড়েছে!")
+        broadcast_game_state(room_code)
 
 @socketio.on('action_coin')
 def handle_coin(data):
@@ -217,33 +281,6 @@ def handle_action_target(data):
         
     broadcast_game_state(room_code)
 
-@socketio.on('challenge_action')
-def handle_challenge(data):
-    room_code = data['room_code']
-    uid = data['uid']
-    room = rooms[room_code]
-    p = room['players'][uid]
-    
-    add_log(room_code, f"🚨 <b style='color:#ff4d4d;'>চ্যালেঞ্জ!</b> <b>{p['name']}</b> বর্তমান অ্যাকশনটিকে চ্যালেঞ্জ করেছে!")
-    emit('play_alert', {'msg': f"🚨 {p['name']} চ্যালেঞ্জ করেছে! 🚨"}, to=room_code)
-    broadcast_game_state(room_code)
-
-@socketio.on('reveal_card')
-def handle_reveal(data):
-    room_code = data['room_code']
-    uid = data['uid']
-    card_index = data['card_index']
-    room = rooms[room_code]
-    p = room['players'][uid]
-    
-    if 0 <= card_index < len(p['cards']):
-        revealed_card = p['cards'].pop(card_index)
-        p['revealed_cards'].append(revealed_card)
-        add_log(room_code, f"💀 <b>{p['name']}</b> একটি কার্ড ফাঁস করেছে: <b style='color:#ff4d4d;'>{revealed_card}</b>!")
-        if len(p['cards']) == 0:
-            add_log(room_code, f"☠️ <b>{p['name']}</b> গেম থেকে বাদ পড়েছে!")
-        broadcast_game_state(room_code)
-
 @socketio.on('ambassador_draw')
 def handle_ambassador_draw(data):
     room_code = data['room_code']
@@ -281,11 +318,9 @@ def handle_leave_room(data):
     if room_code in rooms and uid in rooms[room_code]['players']:
         room = rooms[room_code]
         leave_room(room_code)
-        
-        # গেম চলাকালীন বের হলে তাকে ডেড (Dead) বানিয়ে দেওয়া হবে
         if room['status'] == 'playing':
             room['players'][uid]['online'] = False
-            room['players'][uid]['cards'] = [] # কার্ড খালি করে দেওয়া হলো যাতে তার টার্ন না আসে
+            room['players'][uid]['cards'] = [] 
             add_log(room_code, f"🚪 <b>{room['players'][uid]['name']}</b> গেম ছেড়ে চলে গেছে!")
             broadcast_game_state(room_code)
         else:
@@ -297,7 +332,6 @@ def handle_leave_room(data):
             else:
                 del rooms[room_code]
                 return
-                
         emit('update_lobby', get_lobby_data(room_code), to=room_code)
 
 @socketio.on('disconnect')
@@ -308,12 +342,6 @@ def handle_disconnect():
                 p['online'] = False
                 if room['status'] == 'waiting':
                     del room['players'][uid]
-                    if room['host_uid'] == uid:
-                        if room['players']:
-                            room['host_uid'] = list(room['players'].keys())[0]
-                        else:
-                            del rooms[room_code]
-                            return
                 emit('update_lobby', get_lobby_data(room_code), to=room_code)
                 return
 
